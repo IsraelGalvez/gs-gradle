@@ -2,7 +2,7 @@ pipeline {
 	agent none
 
 	triggers {
-		pollSCM 'H/10 * * * *'
+		pollSCM 'H/ * * * *'
 	}
 
 	options {
@@ -16,7 +16,6 @@ pipeline {
 				docker {
 					image 'adoptopenjdk/openjdk8:latest'
 					args '-v $HOME/.m2:/tmp/jenkins-home/.m2'
-					echo 'Probando'
 				}
 			}
 			options { timeout(time: 30, unit: 'MINUTES') }
