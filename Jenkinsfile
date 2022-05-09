@@ -1,21 +1,44 @@
-node {
-    def myGradleContainer = docker.image('gradle:jdk8-alpine')
-    myGradleContainer.pull()
+pipeline {
+	agent none
 
-    stage('prep') {
-        git url: 'https://github.com/IsraelGalvez/gs-gradle.git'
-    }
+	triggers {
+		pollSCM 'H/10 * * * *'
+	}
 
-    stage('build') {
-      myGradleContainer.inside("-v ${env.HOME}/.gradle:/home/gradle/.gradle") {
-        sh 'cd complete && /opt/gradle/bin/gradle build'
-      }
-    }
+	options {
+		disableConcurrentBuilds()
+		buildDiscarder(logRotator(numToKeepStr: '14'))
+	}
 
-    stage('sonar-scanner') {
-      def sonarqubeScannerHome = tool name: 'sonar', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
-      withCredentials([string(credentialsId: 'sonar', variable: 'sonarLogin')]) {
-        sh "${sonarqubeScannerHome}/bin/sonar-scanner -e -Dsonar.host.url=http://sonarqube:9000 -Dsonar.login=${sonarLogin} -Dsonar.projectName=gs-gradle -Dsonar.projectVersion=${env.BUILD_NUMBER} -Dsonar.projectKey=GS -Dsonar.sources=complete/src/main/ -Dsonar.tests=complete/src/test/ -Dsonar.language=java -Dsonar.java.binaries=."
-      }
-    }
+	stages {
+		stage("test: baseline (jdk8)") {
+			agent {
+				docker {
+					image 'adoptopenjdk/openjdk8:latest'
+					args '-v $HOME/.m2:/tmp/jenkins-home/.m2'
+				}
+			}
+			options { timeout(time: 30, unit: 'MINUTES') }
+			steps {
+				sh 'test/run.sh'
+			}
+		}
+
+	}
+
+	post {
+		changed {
+			script {
+				slackSend(
+						color: (currentBuild.currentResult == 'SUCCESS') ? 'good' : 'danger',
+						channel: '#sagan-content',
+						message: "${currentBuild.fullDisplayName} - `${currentBuild.currentResult}`\n${env.BUILD_URL}")
+				emailext(
+						subject: "[${currentBuild.fullDisplayName}] ${currentBuild.currentResult}",
+						mimeType: 'text/html',
+						recipientProviders: [[$class: 'CulpritsRecipientProvider'], [$class: 'RequesterRecipientProvider']],
+						body: "<a href=\"${env.BUILD_URL}\">${currentBuild.fullDisplayName} is reported as ${currentBuild.currentResult}</a>")
+			}
+		}
+	}
 }
